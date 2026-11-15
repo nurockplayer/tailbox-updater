@@ -1,0 +1,156 @@
+name: Build and release
+on:
+  schedule:
+    - cron: '23 3 * * *'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Upstream version (without v); defaults to latest stable
+        required: false
+        type: string
+
+permissions: {}
+concurrency:
+  group: tailbox-release
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      skip: ${{ steps.plan.outputs.skip }}
+    steps:
+      - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          version="$INPUT_VERSION"
+          if [[ -z "$version" ]]; then
+            version=$(gh api repos/tailscale/tailscale/releases/latest --jq .tag_name)
+            version=${version#v}
+          fi
+          if [[ ! $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid version: $version" >&2; exit 1
+          fi
+          minor=${version#*.}; minor=${minor%%.*}
+          if (( 10#$minor % 2 != 0 )); then
+            echo "Not a stable version: $version" >&2; exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if gh api "repos/$REPO/releases/tags/v$version" > /dev/null 2> error.txt; then
+            echo 'skip=true' >> "$GITHUB_OUTPUT"
+          elif grep -q 'HTTP 404' error.txt; then
+            echo 'skip=false' >> "$GITHUB_OUTPUT"
+          else
+            cat error.txt >&2; exit 1
+          fi
+
+  build:
+    needs: plan
+    if: needs.plan.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, arm, mipsle, mips]
+    continue-on-error: ${{ matrix.arch != 'arm64' }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Build
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+          ARCH: ${{ matrix.arch }}
+        run: build/build.sh "$VERSION" "$ARCH"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: binary-${{ matrix.arch }}
+          path: |
+            dist/tailscaled-linux-${{ matrix.arch }}
+            dist/tailscaled-linux-${{ matrix.arch }}.commit
+          if-no-files-found: error
+
+  release:
+    needs: [plan, build]
+    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.skip != 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: binary-*
+          path: dist
+          merge-multiple: true
+      - name: Prepare release
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+        run: |
+          set -euo pipefail
+          cd dist
+          test -f tailscaled-linux-arm64
+          test -f tailscaled-linux-arm64.commit
+          commit=$(cat tailscaled-linux-arm64.commit)
+          arches=()
+          binaries=()
+          for arch in arm64 arm mipsle mips; do
+            if [[ -f tailscaled-linux-$arch ]]; then
+              arches+=("$arch")
+              binaries+=("tailscaled-linux-$arch")
+            fi
+          done
+          {
+            echo "TBU_VERSION=$VERSION"
+            echo "TBU_UPSTREAM_COMMIT=$commit"
+            echo "TBU_PUBLISHED=$(date +%s)"
+            echo "TBU_ARCHES=${arches[*]}"
+            echo 'TBU_TESTED_ARCHES=arm64'
+          } > release.env
+          sha256sum "${binaries[@]}" release.env > SHA256SUMS
+          {
+            echo "Upstream: [v$VERSION](https://github.com/tailscale/tailscale/releases/tag/v$VERSION), [commit $commit](https://github.com/tailscale/tailscale/commit/$commit)"
+            echo
+            echo 'Binaries:'
+            for arch in "${arches[@]}"; do
+              status=untested; [[ $arch == arm64 ]] && status=tested
+              echo "- $arch: $(wc -c < "tailscaled-linux-$arch" | tr -d ' ') bytes ($status)"
+            done
+            echo
+            echo 'Removed features (when supported upstream):'
+            echo '```'
+            grep -v '^#' ../build/remove-features.txt
+            echo '```'
+            echo
+            echo 'Unofficial; not affiliated with Tailscale Inc. or GL.iNet'
+            echo
+            echo 'Verify: `sha256sum -c SHA256SUMS` and `gh attestation verify <file> --repo nurockplayer/tailbox-updater`.'
+          } > notes.md
+      - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-path: |
+            dist/tailscaled-linux-*
+            !dist/*.commit
+            dist/release.env
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.plan.outputs.version }}
+        run: |
+          set -euo pipefail
+          files=(dist/tailscaled-linux-*)
+          binaries=()
+          for file in "${files[@]}"; do
+            [[ $file == *.commit ]] || binaries+=("$file")
+          done
+          gh release create "v$VERSION" "${binaries[@]}" dist/release.env dist/SHA256SUMS \
+            --title "Tailscale $VERSION (tailbox build)" --notes-file dist/notes.md --latest
