@@ -1,6 +1,7 @@
 #!/bin/sh
 # Configuration is data, never shell code.
-TBU_CONF=${TBU_CONF:-/etc/tailbox-updater.conf}
+TBU_ROOT=${TBU_ROOT:-}
+TBU_CONF=${TBU_CONF:-$TBU_ROOT/etc/tailbox-updater.conf}
 config() {
     val=$(sed -n "s/^$1=//p" "$TBU_CONF" 2>/dev/null | tail -n 1)
     [ -n "$val" ] && printf '%s' "$val" || printf '%s' "$2"
@@ -9,15 +10,15 @@ TBU_REPO_URL=$(config TBU_REPO_URL "${TBU_REPO_URL:-https://github.com/nurockpla
 TBU_MIN_AGE_H=$(config TBU_MIN_AGE_H "${TBU_MIN_AGE_H:-48}")
 TBU_HEALTH_TIMEOUT=$(config TBU_HEALTH_TIMEOUT "${TBU_HEALTH_TIMEOUT:-90}")
 TBU_BOOT_WAIT=$(config TBU_BOOT_WAIT "${TBU_BOOT_WAIT:-120}")
-TBU_BIN=$(config TBU_BIN "${TBU_BIN:-/usr/sbin/tailscaled}")
-TBU_CLI=$(config TBU_CLI "${TBU_CLI:-/usr/sbin/tailscale}")
-TBU_ROM_BIN=$(config TBU_ROM_BIN "${TBU_ROM_BIN:-/rom/usr/sbin/tailscaled}")
-TBU_INIT=$(config TBU_INIT "${TBU_INIT:-/etc/init.d/tailscale}")
-TBU_STATE=$(config TBU_STATE "${TBU_STATE:-/etc/tailbox-updater}")
-TBU_WORK=$(config TBU_WORK "${TBU_WORK:-/tmp/tailbox}")
-TBU_CRONTAB=$(config TBU_CRONTAB "${TBU_CRONTAB:-/etc/crontabs/root}")
-TBU_RCLOCAL=$(config TBU_RCLOCAL "${TBU_RCLOCAL:-/etc/rc.local}")
-arch=$(sed -n "s/^DISTRIB_ARCH=['\"]\{0,1\}\([^'\"]*\).*/\1/p" /etc/openwrt_release 2>/dev/null)
+TBU_BIN=$(config TBU_BIN "${TBU_BIN:-$TBU_ROOT/usr/sbin/tailscaled}")
+TBU_CLI=$(config TBU_CLI "${TBU_CLI:-$TBU_ROOT/usr/sbin/tailscale}")
+TBU_ROM_BIN=$(config TBU_ROM_BIN "${TBU_ROM_BIN:-$TBU_ROOT/rom/usr/sbin/tailscaled}")
+TBU_INIT=$(config TBU_INIT "${TBU_INIT:-$TBU_ROOT/etc/init.d/tailscale}")
+TBU_STATE=$(config TBU_STATE "${TBU_STATE:-$TBU_ROOT/etc/tailbox-updater}")
+TBU_WORK=$(config TBU_WORK "${TBU_WORK:-$TBU_ROOT/tmp/tailbox}")
+TBU_CRONTAB=$(config TBU_CRONTAB "${TBU_CRONTAB:-$TBU_ROOT/etc/crontabs/root}")
+TBU_RCLOCAL=$(config TBU_RCLOCAL "${TBU_RCLOCAL:-$TBU_ROOT/etc/rc.local}")
+arch=$(sed -n "s/^DISTRIB_ARCH=['\"]\{0,1\}\([^'\"]*\).*/\1/p" "$TBU_ROOT/etc/openwrt_release" 2>/dev/null)
 case $arch in aarch64*) arch=arm64;; arm_*) arch=arm;; mipsel_*) arch=mipsle;; mips_*) arch=mips;; *) arch=unknown;; esac
 TBU_ARCH=$(config TBU_ARCH "${TBU_ARCH:-$arch}")
 mkdir -p "$TBU_WORK" || exit 1
@@ -109,7 +110,7 @@ hooks() {
     if [ "$1" = install ]; then
         if ! grep -q '# tailbox-updater$' "$TBU_CRONTAB"; then
             minute=$(awk 'BEGIN { srand(); print int(rand()*60) }')
-            echo "$minute 4 * * * /usr/bin/tailbox-update update # tailbox-updater" >> "$TBU_CRONTAB"; /etc/init.d/cron restart
+            echo "$minute 4 * * * /usr/bin/tailbox-update update # tailbox-updater" >> "$TBU_CRONTAB"; "$TBU_ROOT/etc/init.d/cron" restart
         fi
         if ! grep -q '# tailbox-updater$' "$TBU_RCLOCAL"; then
             sed '/^[[:space:]]*exit 0[[:space:]]*$/i\
@@ -117,7 +118,7 @@ hooks() {
 ' "$TBU_RCLOCAL" > "$TBU_WORK/rc.local" && cat "$TBU_WORK/rc.local" > "$TBU_RCLOCAL"
         fi
     else
-        if grep -q '# tailbox-updater$' "$TBU_CRONTAB"; then sed '/# tailbox-updater$/d' "$TBU_CRONTAB" > "$TBU_WORK/crontab"; cat "$TBU_WORK/crontab" > "$TBU_CRONTAB"; /etc/init.d/cron restart; fi
+        if grep -q '# tailbox-updater$' "$TBU_CRONTAB"; then sed '/# tailbox-updater$/d' "$TBU_CRONTAB" > "$TBU_WORK/crontab"; cat "$TBU_WORK/crontab" > "$TBU_CRONTAB"; "$TBU_ROOT/etc/init.d/cron" restart; fi
         sed '/# tailbox-updater$/d' "$TBU_RCLOCAL" > "$TBU_WORK/rc.local" && cat "$TBU_WORK/rc.local" > "$TBU_RCLOCAL"
     fi
 }

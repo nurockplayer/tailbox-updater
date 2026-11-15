@@ -1,8 +1,9 @@
 #!/bin/sh
 set -e
+TBU_ROOT=${TBU_ROOT:-}
 raw=${TBU_RAW_URL:-https://raw.githubusercontent.com/nurockplayer/tailbox-updater/main}
-bin=${TBU_INSTALL_BIN:-/usr/bin/tailbox-update}
-conf=${TBU_CONF:-/etc/tailbox-updater.conf}
+bin=${TBU_INSTALL_BIN:-$TBU_ROOT/usr/bin/tailbox-update}
+conf=${TBU_CONF:-$TBU_ROOT/etc/tailbox-updater.conf}
 if [ "${1:-}" = uninstall ]; then
     if [ -x "$bin" ]; then "$bin" remove-hooks; fi
     rm -f "$bin" "$conf"

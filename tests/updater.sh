@@ -1,12 +1,14 @@
 #!/bin/sh
 set -u
 root=$(mktemp -d); trap 'rm -rf "$root"' EXIT
-mkdir -p "$root/bin" "$root/rom" "$root/work" "$root/state" "$root/releases/latest/download" "$root/releases/download" "$root/etc" /etc/init.d
-cat > /etc/init.d/cron <<'CRON'
+TBU_ROOT=$root; export TBU_ROOT
+cron_before=$(if [ -e /etc/init.d/cron ]; then sha256sum /etc/init.d/cron; else echo absent; fi)
+mkdir -p "$root/etc/init.d" "$root/bin" "$root/rom" "$root/work" "$root/state" "$root/releases/latest/download" "$root/releases/download" "$root/etc"
+cat > "$root/etc/init.d/cron" <<'CRON'
 #!/bin/sh
 exit 0
 CRON
-chmod +x /etc/init.d/cron
+chmod +x "$root/etc/init.d/cron"
 cat > "$root/bin/logger" <<'LOGGER'
 #!/bin/sh
 exit 0
@@ -58,4 +60,6 @@ run install-hooks; first=$(cat "$TBU_CRONTAB"); run install-hooks; name=hooks; c
 run remove-hooks; name=remove; check sh -c '! grep -q tailbox-updater "$TBU_CRONTAB" && ! grep -q tailbox-updater "$TBU_RCLOCAL"'
 TBU_RAW_URL=file://$(pwd) TBU_INSTALL_BIN=$root/bin/installed; export TBU_RAW_URL TBU_INSTALL_BIN
 sh install.sh >/dev/null; sh install.sh uninstall >/dev/null; name=installer; check test ! -e "$TBU_INSTALL_BIN"
+cron_after=$(if [ -e /etc/init.d/cron ]; then sha256sum /etc/init.d/cron; else echo absent; fi)
+name=system_cron_untouched; check test "$cron_before" = "$cron_after"
 exit "$failed"
