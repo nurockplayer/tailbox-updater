@@ -35,7 +35,7 @@ done < "$root/build/remove-features.txt"
 list=$(IFS=,; echo "${features[*]}")
 OMIT=$(./tool/go run ./cmd/featuretags --remove="$list")
 asset="tailscaled-linux-$arch"
-TAGS="ts_include_cli,$OMIT" ./build_dist.sh --strip -o "$root/dist/$asset" ./cmd/tailscaled
+TS_USE_TOOLCHAIN=1 TAGS="ts_include_cli,$OMIT" ./build_dist.sh --strip -o "$root/dist/$asset" ./cmd/tailscaled
 size=$(wc -c < "$root/dist/$asset" | tr -d ' ')
 budget=$(awk -v arch="$arch" '$1 == arch {print $2}' "$root/build/size-budget.tsv")
 echo "$asset: $size bytes (budget $budget bytes)"
