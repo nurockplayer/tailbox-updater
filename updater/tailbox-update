@@ -31,9 +31,9 @@ field() { sed -n "s/^$1=//p" "$TBU_WORK/release.env"; }
 release() {
     fetch "$TBU_REPO_URL/latest/download/release.env" "$TBU_WORK/release.env" || { log 'release fetch failed'; return 1; }
     ver=$(field TBU_VERSION); published=$(field TBU_PUBLISHED); arches=$(field TBU_ARCHES); tested=$(field TBU_TESTED_ARCHES)
-    printf '%s\n' "$ver" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' &&
+    if ! { printf '%s\n' "$ver" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' &&
     printf '%s\n' "$published" | grep -Eq '^[0-9]+$' &&
-    printf '%s\n' "$arches" | grep -Eq '^[a-z0-9 ]+$' || { log 'invalid release.env'; return 1; }
+    printf '%s\n' "$arches" | grep -Eq '^[a-z0-9 ]+$'; }; then log 'invalid release.env'; return 1; fi
 }
 version() { "$TBU_BIN" --version 2>/dev/null | head -n 1; }
 healthy() { "$TBU_CLI" status --json 2>/dev/null | grep -Eq '"BackendState"[[:space:]]*:[[:space:]]*"Running"'; }
@@ -83,10 +83,10 @@ update() {
     available=${TBU_TEST_AVAIL_KB:-$(df -Pk "$TBU_WORK" | awk 'NR==2 {print $4}')}
     [ "$available" -ge 65536 ] || { log 'insufficient work space'; return 1; }
     asset=tailscaled-linux-$TBU_ARCH
-    fetch "$TBU_REPO_URL/download/v$ver/SHA256SUMS" "$TBU_WORK/SHA256SUMS" && fetch "$TBU_REPO_URL/download/v$ver/$asset" "$TBU_WORK/$asset" || { log 'asset fetch failed'; return 1; }
+    if ! fetch "$TBU_REPO_URL/download/v$ver/SHA256SUMS" "$TBU_WORK/SHA256SUMS" || ! fetch "$TBU_REPO_URL/download/v$ver/$asset" "$TBU_WORK/$asset"; then log 'asset fetch failed'; return 1; fi
     sum=$(awk -v name="$asset" '$2 == name {print $1}' "$TBU_WORK/SHA256SUMS")
     actual=$(sha256sum "$TBU_WORK/$asset" | awk '{print $1}')
-    [ -n "$sum" ] && [ "$sum" = "$actual" ] || { log 'checksum mismatch'; return 1; }
+    if [ -z "$sum" ] || [ "$sum" != "$actual" ]; then log 'checksum mismatch'; return 1; fi
     chmod 755 "$TBU_WORK/$asset"
     [ "$("$TBU_WORK/$asset" --version | head -n 1)" = "$ver" ] || { log 'asset version mismatch'; return 1; }
     available=${TBU_TEST_AVAIL_KB:-$(df -Pk "$(dirname "$TBU_BIN")" | awk 'NR==2 {print $4}')}

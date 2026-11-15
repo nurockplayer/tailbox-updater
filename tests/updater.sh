@@ -1,4 +1,6 @@
 #!/bin/sh
+# The test invokes functions indirectly and passes literal scripts to sh -c.
+# shellcheck disable=SC2016,SC2317
 set -u
 root=$(mktemp -d); trap 'rm -rf "$root"' EXIT
 TBU_ROOT=$root; export TBU_ROOT
