@@ -58,9 +58,12 @@ lock() {
 }
 restore() {
     "$TBU_INIT" stop || :
-    rm -f "$TBU_BIN"
-    if ! cp "$TBU_WORK/prev" "$TBU_BIN" 2>/dev/null; then
-        cp "$TBU_ROM_BIN" "$TBU_BIN" || { log 'restore copy failed'; return 1; }
+    # Stage first so a full overlay keeps whatever binary is there; replace in place only if that fails.
+    if ! { cp "$TBU_WORK/prev" "$TBU_BIN.tbu-new" 2>/dev/null && mv -f "$TBU_BIN.tbu-new" "$TBU_BIN"; }; then
+        rm -f "$TBU_BIN.tbu-new" "$TBU_BIN"
+        if ! cp "$TBU_WORK/prev" "$TBU_BIN" 2>/dev/null; then
+            cp "$TBU_ROM_BIN" "$TBU_BIN" || { log 'restore copy failed'; return 1; }
+        fi
     fi
     chmod 755 "$TBU_BIN"; sync; "$TBU_INIT" start || :
     if wait_health; then log 'rollback healthy'; return 0; else log 'rollback unhealthy'; return 1; fi
@@ -93,17 +96,26 @@ update() {
     available=${TBU_TEST_BIN_AVAIL_KB:-${TBU_TEST_AVAIL_KB:-$(df -Pk "$(dirname "$TBU_BIN")" | awk 'NR==2 {print $4}')}}
     # Replacing the binary frees only what the overlay holds; a ROM copy restored by boot-check is held there too.
     upper=$TBU_UPPER${TBU_BIN#"$TBU_ROOT"}
-    if [ -d "$TBU_UPPER" ]; then old=0; [ -f "$upper" ] && old=$(wc -c < "$upper"); else old=$(wc -c < "$TBU_BIN"); fi
+    held=yes; old=$(wc -c < "$TBU_BIN")
+    if [ -d "$TBU_UPPER" ]; then old=0; held=no; [ -f "$upper" ] && { old=$(wc -c < "$upper"); held=yes; }; fi
     size=$(wc -c < "$TBU_WORK/$asset")
     [ $((available * 1024 + old)) -ge $((size + 1048576)) ] || { log 'insufficient binary space'; return 1; }
     cp "$TBU_BIN" "$TBU_WORK/prev" || return 1
     printf '%s\n' "$current" > "$TBU_WORK/prev.version"
-    "$TBU_INIT" stop || :
-    rm -f "$TBU_BIN"
-    # The estimate above uses logical sizes; UBIFS compresses, so measure again once the old binary is gone.
-    available=${TBU_TEST_FREED_AVAIL_KB:-$(df -Pk "$(dirname "$TBU_BIN")" | awk 'NR==2 {print $4}')}
-    [ $((available * 1024)) -ge $((size + 1048576)) ] || { log 'insufficient binary space after removal'; restore; return 1; }
-    if ! cp "$TBU_WORK/$asset" "$TBU_BIN" || ! chmod 755 "$TBU_BIN"; then log 'install copy failed'; restore; return 1; fi
+    # The estimate above uses logical sizes and UBIFS compresses, so stage the new binary beside the old one:
+    # if the overlay fills up, the working binary is untouched.
+    if cp "$TBU_WORK/$asset" "$TBU_BIN.tbu-new" 2>/dev/null && chmod 755 "$TBU_BIN.tbu-new"; then
+        "$TBU_INIT" stop || :
+        mv -f "$TBU_BIN.tbu-new" "$TBU_BIN" || { log 'install move failed'; rm -f "$TBU_BIN.tbu-new"; restore; return 1; }
+    else
+        rm -f "$TBU_BIN.tbu-new"
+        # Removing a ROM-only binary frees nothing (it leaves a whiteout), so only replace in place
+        # a copy the overlay holds: removing it frees the space its restore needs.
+        [ "$held" = yes ] || { log 'insufficient binary space'; return 1; }
+        "$TBU_INIT" stop || :
+        rm -f "$TBU_BIN"
+        if ! cp "$TBU_WORK/$asset" "$TBU_BIN" || ! chmod 755 "$TBU_BIN"; then log 'install copy failed'; restore; return 1; fi
+    fi
     sync; "$TBU_INIT" start || :
     if wait_health; then
         mkdir -p "$TBU_STATE"; echo "$ver" > "$TBU_STATE/installed"; rm -f "$TBU_WORK/$asset"; log "installed $ver"; return 0
