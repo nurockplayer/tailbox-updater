@@ -2,8 +2,8 @@
 
 | # | Row | How to judge | Status |
 |---|-----|--------------|--------|
-| A1 | CI builds the arm64 box binary from the newest upstream stable tag the day it appears, under the size budget | Actions run log + release assets | open |
-| A2 | Each release has SHA256SUMS, release.env and a GitHub artifact attestation | `gh attestation verify tailscaled-linux-arm64 --repo nurockplayer/tailbox-updater` | open |
+| A1 | CI builds the arm64 box binary from the newest upstream stable tag the day it appears, under the size budget | Actions run log + release assets | partial 2026-11-16: build + size budget pass (manual dispatch run 43805432058); scheduled pickup of a new upstream tag not yet observed |
+| A2 | Each release has SHA256SUMS, release.env and a GitHub artifact attestation | `gh attestation verify tailscaled-linux-arm64 --repo nurockplayer/tailbox-updater` | pass 2026-11-16 (v1.104.7: SHA256SUMS OK, attestations verified for 4 binaries + release.env) |
 | A3 | Updater on the AXT1800 does nothing when already current, and waits until a release is 48 h old | `tailbox-update status`, logread | open |
 | A4 | Updater on the AXT1800 swaps to a newer release and Tailscale is Running afterwards (exit node + routes work) | `tailscale status`, phone via exit node | open |
 | A5 | A release that fails the health check is rolled back automatically and not retried | forced bad release test, logread | open |
