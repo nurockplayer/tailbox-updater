@@ -58,6 +58,8 @@ release 1.0.0 "$old"; run update --force --foreground >/dev/null; name=no_downgr
 printf 'TBU_VERSION=$(touch %s/pwned)\nTBU_PUBLISHED=1\nTBU_ARCHES=arm64\n' "$root" > "$root/releases/latest/download/release.env"; run update --foreground >/dev/null || :; name=malicious; check test ! -e "$root/pwned"
 release 1.2.1 "$old"; TBU_TEST_AVAIL_KB=1 run update --foreground >/dev/null || :; name=space; check isver 1.1.0
 touch "$root/bad-1.1.0"; run boot-check >/dev/null; name=boot; check isver 1.0.0
+rm "$root/bad-1.1.0"; up=$root/overlay/upper${TBU_BIN#"$root"}; mkdir -p "$(dirname "$up")"; cp "$TBU_BIN" "$up"; dd if=/dev/zero bs=1024 count=2048 >> "$up" 2>/dev/null
+release 1.2.1 "$old"; TBU_TEST_BIN_AVAIL_KB=1 run update --foreground >/dev/null || :; name=rom_copy_space; check isver 1.2.1
 run install-hooks; first=$(cat "$TBU_CRONTAB"); run install-hooks; name=hooks; check sh -c '[ "$(wc -l < "$TBU_CRONTAB")" -eq 1 ] && [ "$(grep -c tailbox-updater "$TBU_RCLOCAL")" -eq 1 ] && [ "$(tail -n 1 "$TBU_RCLOCAL")" = "exit 0" ]'; name=minute; check test "$first" = "$(cat "$TBU_CRONTAB")"
 run remove-hooks; name=remove; check sh -c '! grep -q tailbox-updater "$TBU_CRONTAB" && ! grep -q tailbox-updater "$TBU_RCLOCAL"'
 TBU_RAW_URL=file://$(pwd) TBU_INSTALL_BIN=$root/bin/installed; export TBU_RAW_URL TBU_INSTALL_BIN

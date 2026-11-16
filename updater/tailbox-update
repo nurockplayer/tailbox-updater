@@ -13,6 +13,7 @@ TBU_BOOT_WAIT=$(config TBU_BOOT_WAIT "${TBU_BOOT_WAIT:-120}")
 TBU_BIN=$(config TBU_BIN "${TBU_BIN:-$TBU_ROOT/usr/sbin/tailscaled}")
 TBU_CLI=$(config TBU_CLI "${TBU_CLI:-$TBU_ROOT/usr/sbin/tailscale}")
 TBU_ROM_BIN=$(config TBU_ROM_BIN "${TBU_ROM_BIN:-$TBU_ROOT/rom/usr/sbin/tailscaled}")
+TBU_UPPER=$(config TBU_UPPER "${TBU_UPPER:-$TBU_ROOT/overlay/upper}")
 TBU_INIT=$(config TBU_INIT "${TBU_INIT:-$TBU_ROOT/etc/init.d/tailscale}")
 TBU_STATE=$(config TBU_STATE "${TBU_STATE:-$TBU_ROOT/etc/tailbox-updater}")
 TBU_WORK=$(config TBU_WORK "${TBU_WORK:-$TBU_ROOT/tmp/tailbox}")
@@ -89,8 +90,10 @@ update() {
     if [ -z "$sum" ] || [ "$sum" != "$actual" ]; then log 'checksum mismatch'; return 1; fi
     chmod 755 "$TBU_WORK/$asset"
     [ "$("$TBU_WORK/$asset" --version | head -n 1)" = "$ver" ] || { log 'asset version mismatch'; return 1; }
-    available=${TBU_TEST_AVAIL_KB:-$(df -Pk "$(dirname "$TBU_BIN")" | awk 'NR==2 {print $4}')}
-    old=0; cmp -s "$TBU_BIN" "$TBU_ROM_BIN" || old=$(wc -c < "$TBU_BIN")
+    available=${TBU_TEST_BIN_AVAIL_KB:-${TBU_TEST_AVAIL_KB:-$(df -Pk "$(dirname "$TBU_BIN")" | awk 'NR==2 {print $4}')}}
+    # Replacing the binary frees only what the overlay holds; a ROM copy restored by boot-check is held there too.
+    upper=$TBU_UPPER${TBU_BIN#"$TBU_ROOT"}
+    if [ -d "$TBU_UPPER" ]; then old=0; [ -f "$upper" ] && old=$(wc -c < "$upper"); else old=$(wc -c < "$TBU_BIN"); fi
     size=$(wc -c < "$TBU_WORK/$asset")
     [ $((available * 1024 + old)) -ge $((size + 1048576)) ] || { log 'insufficient binary space'; return 1; }
     cp "$TBU_BIN" "$TBU_WORK/prev" || return 1
