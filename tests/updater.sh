@@ -16,6 +16,14 @@ cat > "$root/bin/logger" <<'LOGGER'
 exit 0
 LOGGER
 chmod +x "$root/bin/logger"
+# A full overlay: staging a binary beside the installed one fails like ENOSPC.
+cat > "$root/bin/cp" <<CP
+#!/bin/sh
+for last do :; done
+case \$last in *.tbu-new) if [ -e '$root/full' ]; then echo 'No space left on device' >&2; exit 1; fi;; esac
+exec /bin/cp "\$@"
+CP
+chmod +x "$root/bin/cp"
 PATH="$root/bin:$PATH"; export PATH
 TBU_CONF=$root/etc/conf TBU_BIN=$root/bin/tailscaled TBU_CLI=$root/bin/tailscale TBU_ROM_BIN=$root/rom/tailscaled TBU_INIT=$root/init TBU_STATE=$root/state TBU_WORK=$root/work TBU_CRONTAB=$root/etc/crontab TBU_RCLOCAL=$root/etc/rc.local TBU_ARCH=arm64 TBU_HEALTH_TIMEOUT=0 TBU_BOOT_WAIT=0 TBU_REPO_URL=file://$root/releases
 export TBU_CONF TBU_BIN TBU_CLI TBU_ROM_BIN TBU_INIT TBU_STATE TBU_WORK TBU_CRONTAB TBU_RCLOCAL TBU_ARCH TBU_HEALTH_TIMEOUT TBU_BOOT_WAIT TBU_REPO_URL
@@ -58,6 +66,11 @@ release 1.0.0 "$old"; run update --force --foreground >/dev/null; name=no_downgr
 printf 'TBU_VERSION=$(touch %s/pwned)\nTBU_PUBLISHED=1\nTBU_ARCHES=arm64\n' "$root" > "$root/releases/latest/download/release.env"; run update --foreground >/dev/null || :; name=malicious; check test ! -e "$root/pwned"
 release 1.2.1 "$old"; TBU_TEST_AVAIL_KB=1 run update --foreground >/dev/null || :; name=space; check isver 1.1.0
 touch "$root/bad-1.1.0"; run boot-check >/dev/null; name=boot; check isver 1.0.0
+rm "$root/bad-1.1.0"; up=$root/overlay/upper${TBU_BIN#"$root"}; mkdir -p "$(dirname "$up")"; cp "$TBU_BIN" "$up"; dd if=/dev/zero bs=1024 count=2048 >> "$up" 2>/dev/null
+release 1.2.1 "$old"; TBU_TEST_BIN_AVAIL_KB=1 run update --foreground >/dev/null || :; name=rom_copy_space; check isver 1.2.1
+release 1.2.2 "$old"; rm "$up"; touch "$root/full"; run update --foreground >/dev/null || :; name=full_rom_only; check sh -c '[ "$("$TBU_BIN" --version)" = 1.2.1 ] && [ ! -e "$TBU_BIN.tbu-new" ] && ! grep -qx 1.2.2 "$TBU_STATE/failed"'
+cp "$TBU_BIN" "$up"; run update --foreground >/dev/null; name=full_held; check isver 1.2.2; rm "$root/full"
+rm "$up"; dd if=/dev/zero bs=1024 count=4096 >> "$TBU_BIN" 2>/dev/null; release 1.2.3 "$old"; TBU_TEST_BIN_AVAIL_KB=3072 run update --foreground >/dev/null || :; name=rom_only_rollback_space; check isver 1.2.2
 run install-hooks; first=$(cat "$TBU_CRONTAB"); run install-hooks; name=hooks; check sh -c '[ "$(wc -l < "$TBU_CRONTAB")" -eq 1 ] && [ "$(grep -c tailbox-updater "$TBU_RCLOCAL")" -eq 1 ] && [ "$(tail -n 1 "$TBU_RCLOCAL")" = "exit 0" ]'; name=minute; check test "$first" = "$(cat "$TBU_CRONTAB")"
 run remove-hooks; name=remove; check sh -c '! grep -q tailbox-updater "$TBU_CRONTAB" && ! grep -q tailbox-updater "$TBU_RCLOCAL"'
 TBU_RAW_URL=file://$(pwd) TBU_INSTALL_BIN=$root/bin/installed; export TBU_RAW_URL TBU_INSTALL_BIN
