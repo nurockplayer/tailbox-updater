@@ -21,10 +21,17 @@ curl -fsSL https://raw.githubusercontent.com/nurockplayer/tailbox-updater/main/i
 The installer adds cron and boot hooks and reports updater status. To uninstall the updater and its hooks:
 
 ```sh
-sh install.sh uninstall
+wget -qO- https://raw.githubusercontent.com/nurockplayer/tailbox-updater/main/install.sh | sh -s uninstall
 ```
 
-Uninstall leaves Tailscale in place. To restore the stock router binary, first run `tailbox-update rollback`, or copy `/rom/usr/sbin/tailscaled` to `/usr/sbin/tailscaled`.
+Uninstall leaves Tailscale in place. To restore the stock router binary, first run `tailbox-update rollback`, or restore it by hand:
+
+```sh
+/etc/init.d/tailscale stop
+rm -f /usr/sbin/tailscaled
+cp /rom/usr/sbin/tailscaled /usr/sbin/tailscaled
+/etc/init.d/tailscale start
+```
 
 Configuration is read from `/etc/tailbox-updater.conf`. The defaults are:
 
@@ -134,7 +141,7 @@ Each release includes `tailscaled-linux-<arch>` assets that built successfully, 
 tailbox-update rollback
 ```
 
-The updater restores its saved previous binary. If that copy is unavailable, it uses the stock ROM copy at `/rom/usr/sbin/tailscaled`. To restore stock manually, copy that file to `/usr/sbin/tailscaled`.
+The updater restores its saved previous binary. If that copy is unavailable, it uses the stock ROM copy at `/rom/usr/sbin/tailscaled`. To restore stock by hand, use the stop / copy / start commands in the install section.
 
 ## Known limitations
 
