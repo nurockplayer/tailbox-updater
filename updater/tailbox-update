@@ -99,7 +99,9 @@ update() {
     held=yes; old=$(wc -c < "$TBU_BIN")
     if [ -d "$TBU_UPPER" ]; then old=0; held=no; [ -f "$upper" ] && { old=$(wc -c < "$upper"); held=yes; }; fi
     size=$(wc -c < "$TBU_WORK/$asset")
-    [ $((available * 1024 + old)) -ge $((size + 1048576)) ] || { log 'insufficient binary space'; return 1; }
+    # A rollback of a ROM-only binary must write the whole binary into the overlay, so it has to fit as well.
+    need=$size; [ "$held" = no ] && [ "$(wc -c < "$TBU_BIN")" -gt "$need" ] && need=$(wc -c < "$TBU_BIN")
+    [ $((available * 1024 + old)) -ge $((need + 1048576)) ] || { log 'insufficient binary space'; return 1; }
     cp "$TBU_BIN" "$TBU_WORK/prev" || return 1
     printf '%s\n' "$current" > "$TBU_WORK/prev.version"
     # The estimate above uses logical sizes and UBIFS compresses, so stage the new binary beside the old one:
