@@ -16,6 +16,12 @@ cat > "$root/bin/logger" <<'LOGGER'
 exit 0
 LOGGER
 chmod +x "$root/bin/logger"
+cat > "$root/bin/uci" <<'UCI'
+#!/bin/sh
+[ -f "$TBU_ROOT/uci-enabled" ] || exit 1
+cat "$TBU_ROOT/uci-enabled"
+UCI
+chmod +x "$root/bin/uci"
 # A full overlay: staging a binary beside the installed one fails like ENOSPC.
 cat > "$root/bin/cp" <<CP
 #!/bin/sh
@@ -66,7 +72,9 @@ release 1.0.0 "$old"; run update --force --foreground >/dev/null; name=no_downgr
 printf 'TBU_VERSION=$(touch %s/pwned)\nTBU_PUBLISHED=1\nTBU_ARCHES=arm64\n' "$root" > "$root/releases/latest/download/release.env"; run update --foreground >/dev/null || :; name=malicious; check test ! -e "$root/pwned"
 release 1.2.1 "$old"; TBU_TEST_AVAIL_KB=1 run update --foreground >/dev/null || :; name=space; check isver 1.1.0
 touch "$root/bad-1.1.0" "$root/disabled"; run boot-check > "$root/boot.log"; name=boot_disabled; check sh -c '[ "$("$TBU_BIN" --version)" = 1.1.0 ] && grep -q "boot-check skipped" "$TBU_ROOT/boot.log"'
-rm "$root/disabled"; run boot-check >/dev/null; name=boot; check isver 1.0.0
+rm "$root/disabled"; echo 0 > "$root/uci-enabled"; run boot-check > "$root/boot.log"; name=boot_uci_disabled; check sh -c '[ "$("$TBU_BIN" --version)" = 1.1.0 ] && grep -q "boot-check skipped" "$TBU_ROOT/boot.log"'
+echo 1 > "$root/uci-enabled"; run boot-check >/dev/null; name=boot_uci_enabled; check isver 1.0.0
+makebin "$TBU_BIN" 1.1.0; rm "$root/uci-enabled"; run boot-check >/dev/null; name=boot_uci_missing; check isver 1.0.0
 rm "$root/bad-1.1.0"; up=$root/overlay/upper${TBU_BIN#"$root"}; mkdir -p "$(dirname "$up")"; cp "$TBU_BIN" "$up"; dd if=/dev/zero bs=1024 count=2048 >> "$up" 2>/dev/null
 release 1.2.1 "$old"; TBU_TEST_BIN_AVAIL_KB=1 run update --foreground >/dev/null || :; name=rom_copy_space; check isver 1.2.1
 release 1.2.2 "$old"; rm "$up"; touch "$root/full"; run update --foreground >/dev/null || :; name=full_rom_only; check sh -c '[ "$("$TBU_BIN" --version)" = 1.2.1 ] && [ ! -e "$TBU_BIN.tbu-new" ] && ! grep -qx 1.2.2 "$TBU_STATE/failed"'
