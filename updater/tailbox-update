@@ -77,8 +77,9 @@ update() {
     case " $arches " in *" $TBU_ARCH "*) :;; *) log "architecture $TBU_ARCH unavailable"; return 0;; esac
     case " $tested " in *" $TBU_ARCH "*) :;; *) log "warning: $TBU_ARCH is untested";; esac
     current=$(version)
-    printf '%s\n' "$current" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { log 'invalid installed version'; return 1; }
-    newer "$ver" "$current"; comparison=$?
+    printf '%s\n' "$current" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-+].+)?$' || { log 'invalid installed version'; return 1; }
+    core=${current%%[-+]*}
+    newer "$ver" "$core"; comparison=$?
     if [ "$comparison" -eq 1 ] || { [ "$comparison" -eq 2 ] && [ "$force" != yes ]; }; then log 'up to date'; return 0; fi
     if [ "$force" != yes ] && grep -Fxq "$ver" "$TBU_STATE/failed" 2>/dev/null; then log "skipping failed version $ver"; return 0; fi
     now=$(date +%s); due=$((published + TBU_MIN_AGE_H * 3600))
@@ -126,16 +127,21 @@ update() {
     log "health check failed for $ver; rolling back"; restore; return 1
 }
 hooks() {
+    if [ "$1" = install ]; then
+        self=$(cd "$(dirname "$0")" && pwd)/$(basename "$0") || return 1
+        case $self in *'&'*|*'\'*|*'
+'*) log 'unsafe updater path for hooks'; return 1;; esac
+    fi
     mkdir -p "$(dirname "$TBU_CRONTAB")"; touch "$TBU_CRONTAB"
     if [ "$1" = install ]; then
         if ! grep -q '# tailbox-updater$' "$TBU_CRONTAB"; then
             minute=$(awk 'BEGIN { srand(); print int(rand()*60) }')
-            echo "$minute 4 * * * /usr/bin/tailbox-update update # tailbox-updater" >> "$TBU_CRONTAB"; "$TBU_ROOT/etc/init.d/cron" restart
+            echo "$minute 4 * * * $self update # tailbox-updater" >> "$TBU_CRONTAB"; "$TBU_ROOT/etc/init.d/cron" restart
         fi
         if ! grep -q '# tailbox-updater$' "$TBU_RCLOCAL"; then
-            sed '/^[[:space:]]*exit 0[[:space:]]*$/i\
-(/usr/bin/tailbox-update boot-check) >/dev/null 2>\&1 \&  # tailbox-updater
-' "$TBU_RCLOCAL" > "$TBU_WORK/rc.local" && cat "$TBU_WORK/rc.local" > "$TBU_RCLOCAL"
+            sed "/^[[:space:]]*exit 0[[:space:]]*$/i\\
+($self boot-check) >/dev/null 2>\\&1 \\&  # tailbox-updater
+" "$TBU_RCLOCAL" > "$TBU_WORK/rc.local" && cat "$TBU_WORK/rc.local" > "$TBU_RCLOCAL"
         fi
     else
         if grep -q '# tailbox-updater$' "$TBU_CRONTAB"; then sed '/# tailbox-updater$/d' "$TBU_CRONTAB" > "$TBU_WORK/crontab"; cat "$TBU_WORK/crontab" > "$TBU_CRONTAB"; "$TBU_ROOT/etc/init.d/cron" restart; fi
@@ -153,7 +159,7 @@ case $cmd in
             echo "Started; log: $TBU_WORK/last.log"; exit 0
         fi
         if [ "$cmd" = update ]; then update; else lock && restore; fi;;
-    boot-check) sleep "$TBU_BOOT_WAIT"; if ! healthy && ! cmp -s "$TBU_BIN" "$TBU_ROM_BIN"; then lock || exit 1; rm -f "$TBU_WORK/prev"; restore; fi;;
+    boot-check) sleep "$TBU_BOOT_WAIT"; if ! "$TBU_INIT" enabled; then log 'tailscale service disabled; boot-check skipped'; exit 0; fi; if ! healthy && ! cmp -s "$TBU_BIN" "$TBU_ROM_BIN"; then lock || exit 1; rm -f "$TBU_WORK/prev"; restore; fi;;
     install-hooks) hooks install;; remove-hooks) hooks remove;;
     status) echo "arch: $TBU_ARCH"; echo "installed: $(version)"; if release; then now=$(date +%s); age=$(((now-published)/3600)); echo "latest: $ver, age: $age hours, due: $([ "$age" -ge "$TBU_MIN_AGE_H" ] && echo yes || echo no)"; fi; echo 'failed:'; cat "$TBU_STATE/failed" 2>/dev/null || :; if grep -q '# tailbox-updater$' "$TBU_CRONTAB" 2>/dev/null && grep -q '# tailbox-updater$' "$TBU_RCLOCAL" 2>/dev/null; then echo 'hooks: installed'; else echo 'hooks: not installed'; fi;;
     --help|help) echo 'Usage: tailbox-update status|update [--now] [--force] [--foreground]|rollback [--foreground]|boot-check|install-hooks|remove-hooks';;

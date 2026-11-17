@@ -29,7 +29,7 @@ TBU_CONF=$root/etc/conf TBU_BIN=$root/bin/tailscaled TBU_CLI=$root/bin/tailscale
 export TBU_CONF TBU_BIN TBU_CLI TBU_ROM_BIN TBU_INIT TBU_STATE TBU_WORK TBU_CRONTAB TBU_RCLOCAL TBU_ARCH TBU_HEALTH_TIMEOUT TBU_BOOT_WAIT TBU_REPO_URL
 cat > "$root/init" <<'INIT'
 #!/bin/sh
-exit 0
+[ "$1" != enabled ] || [ ! -e "$TBU_ROOT/disabled" ]
 INIT
 chmod +x "$root/init"
 echo 'exit 0' > "$TBU_RCLOCAL"
@@ -65,13 +65,17 @@ rm "$root/bad-1.2.0"; run update --foreground >/dev/null; name=failed_skip; chec
 release 1.0.0 "$old"; run update --force --foreground >/dev/null; name=no_downgrade; check isver 1.1.0
 printf 'TBU_VERSION=$(touch %s/pwned)\nTBU_PUBLISHED=1\nTBU_ARCHES=arm64\n' "$root" > "$root/releases/latest/download/release.env"; run update --foreground >/dev/null || :; name=malicious; check test ! -e "$root/pwned"
 release 1.2.1 "$old"; TBU_TEST_AVAIL_KB=1 run update --foreground >/dev/null || :; name=space; check isver 1.1.0
-touch "$root/bad-1.1.0"; run boot-check >/dev/null; name=boot; check isver 1.0.0
+touch "$root/bad-1.1.0" "$root/disabled"; run boot-check > "$root/boot.log"; name=boot_disabled; check sh -c '[ "$("$TBU_BIN" --version)" = 1.1.0 ] && grep -q "boot-check skipped" "$TBU_ROOT/boot.log"'
+rm "$root/disabled"; run boot-check >/dev/null; name=boot; check isver 1.0.0
 rm "$root/bad-1.1.0"; up=$root/overlay/upper${TBU_BIN#"$root"}; mkdir -p "$(dirname "$up")"; cp "$TBU_BIN" "$up"; dd if=/dev/zero bs=1024 count=2048 >> "$up" 2>/dev/null
 release 1.2.1 "$old"; TBU_TEST_BIN_AVAIL_KB=1 run update --foreground >/dev/null || :; name=rom_copy_space; check isver 1.2.1
 release 1.2.2 "$old"; rm "$up"; touch "$root/full"; run update --foreground >/dev/null || :; name=full_rom_only; check sh -c '[ "$("$TBU_BIN" --version)" = 1.2.1 ] && [ ! -e "$TBU_BIN.tbu-new" ] && ! grep -qx 1.2.2 "$TBU_STATE/failed"'
 cp "$TBU_BIN" "$up"; run update --foreground >/dev/null; name=full_held; check isver 1.2.2; rm "$root/full"
 rm "$up"; dd if=/dev/zero bs=1024 count=4096 >> "$TBU_BIN" 2>/dev/null; release 1.2.3 "$old"; TBU_TEST_BIN_AVAIL_KB=3072 run update --foreground >/dev/null || :; name=rom_only_rollback_space; check isver 1.2.2
-run install-hooks; first=$(cat "$TBU_CRONTAB"); run install-hooks; name=hooks; check sh -c '[ "$(wc -l < "$TBU_CRONTAB")" -eq 1 ] && [ "$(grep -c tailbox-updater "$TBU_RCLOCAL")" -eq 1 ] && [ "$(tail -n 1 "$TBU_RCLOCAL")" = "exit 0" ]'; name=minute; check test "$first" = "$(cat "$TBU_CRONTAB")"
+makebin "$TBU_BIN" 1.96.4-tiny.by.admon.1266; release 1.96.5 "$old"; run update --foreground >/dev/null; name=suffix_install; check sh -c '[ "$("$TBU_BIN" --version)" = 1.96.5 ] && [ "$(cat "$TBU_WORK/prev.version")" = 1.96.4-tiny.by.admon.1266 ]'
+makebin "$TBU_BIN" 1.96.4-tiny.by.admon.1266; release 1.96.4 "$old"; run update --foreground > "$root/version.log"; name=suffix_equal; check sh -c 'grep -q "up to date" "$TBU_ROOT/version.log" && [ "$("$TBU_BIN" --version)" = 1.96.4-tiny.by.admon.1266 ]'
+makebin "$TBU_BIN" garbage; run update --foreground > "$root/version.log" || :; name=invalid_version; check grep -q 'invalid installed version' "$root/version.log"
+run install-hooks; first=$(cat "$TBU_CRONTAB"); run install-hooks; name=hooks; check sh -c '[ "$(wc -l < "$TBU_CRONTAB")" -eq 1 ] && [ "$(grep -c tailbox-updater "$TBU_RCLOCAL")" -eq 1 ] && [ "$(tail -n 1 "$TBU_RCLOCAL")" = "exit 0" ]'; name=hook_paths; self=$(pwd)/updater/tailbox-update; check sh -c 'grep -Fq "$1 update # tailbox-updater" "$TBU_CRONTAB" && grep -Fq "$1 boot-check" "$TBU_RCLOCAL"' sh "$self"; name=minute; check test "$first" = "$(cat "$TBU_CRONTAB")"
 run remove-hooks; name=remove; check sh -c '! grep -q tailbox-updater "$TBU_CRONTAB" && ! grep -q tailbox-updater "$TBU_RCLOCAL"'
 TBU_RAW_URL=file://$(pwd) TBU_INSTALL_BIN=$root/bin/installed; export TBU_RAW_URL TBU_INSTALL_BIN
 sh install.sh >/dev/null; sh install.sh uninstall >/dev/null; name=installer; check test ! -e "$TBU_INSTALL_BIN"
