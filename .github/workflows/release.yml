@@ -163,24 +163,24 @@ jobs:
             fi
           }
           latest_tag() {
-            local stderr_file stderr status latest
+            local stderr_file stderr status
             stderr_file=$(mktemp)
             if latest=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name 2>"$stderr_file"); then
               rm -f "$stderr_file"
-              printf '%s' "$latest"
               return 0
             else
               status=$?
               stderr=$(<"$stderr_file")
               rm -f "$stderr_file"
               if [[ $stderr == *'HTTP 404'* ]]; then
-                printf ''
+                latest=
                 return 0
               fi
               echo "::error::latest release lookup failed: $stderr"
               return "$status"
             fi
           }
-          latest=$(latest_tag)
+          # Sets $latest; called directly so the ::error:: line reaches the log and set -e stops the step.
+          latest_tag
           gh release create "v$VERSION" "${binaries[@]}" dist/release.env dist/SHA256SUMS \
             --title "Tailscale $VERSION (tailbox build)" --notes-file dist/notes.md "$(latest_flag "$latest")"
