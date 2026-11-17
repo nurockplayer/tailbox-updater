@@ -133,7 +133,7 @@ Verify the GitHub artifact attestation for a binary (repeat with another asset n
 gh attestation verify tailscaled-linux-arm64 --repo nurockplayer/tailbox-updater
 ```
 
-Each release includes `tailscaled-linux-<arch>` assets that built successfully, `SHA256SUMS`, and `release.env`. The release attests each binary and `release.env`. `release.env` records the upstream version and commit, publication time, available architectures, and tested architectures.
+Each release includes `tailscaled-linux-<arch>` assets that built successfully, `SHA256SUMS`, and `release.env`. The release attests each binary and `release.env`. `release.env` records the upstream version and commit, publication time, available architectures, and a tested architectures field that is empty for CI builds. It is a line-oriented `KEY=value` file read with sed, with values extending to the end of each line; it is not shell-sourceable and values must never be quoted because deployed updaters compare the raw values.
 
 ## Rollback
 

@@ -109,12 +109,14 @@ jobs:
               binaries+=("tailscaled-linux-$arch")
             fi
           done
+          # One KEY=value per line; values run to end of line and are read with sed.
+          # Not shell-sourceable: never quote values; deployed updaters compare them raw.
           {
             echo "TBU_VERSION=$VERSION"
             echo "TBU_UPSTREAM_COMMIT=$commit"
             echo "TBU_PUBLISHED=$(date +%s)"
             echo "TBU_ARCHES=${arches[*]}"
-            echo 'TBU_TESTED_ARCHES=arm64'
+            echo 'TBU_TESTED_ARCHES='
           } > release.env
           sha256sum "${binaries[@]}" release.env > SHA256SUMS
           {
@@ -122,9 +124,9 @@ jobs:
             echo
             echo 'Binaries:'
             for arch in "${arches[@]}"; do
-              status=untested; [[ $arch == arm64 ]] && status=tested
-              echo "- $arch: $(wc -c < "tailscaled-linux-$arch" | tr -d ' ') bytes ($status)"
+              echo "- $arch: $(wc -c < "tailscaled-linux-$arch" | tr -d ' ') bytes (not device-tested)"
             done
+            echo 'Device acceptance: docs/acceptance.md'
             echo
             echo 'Removed features (when supported upstream):'
             echo '```'
@@ -152,5 +154,14 @@ jobs:
           for file in "${files[@]}"; do
             [[ $file == *.commit ]] || binaries+=("$file")
           done
+          latest_flag() {
+            local latest=${1#v}
+            if [[ -z $latest ]] || { [[ $VERSION != "$latest" ]] && [[ $(printf '%s\n' "$latest" "$VERSION" | sort -V | tail -n 1) == "$VERSION" ]]; }; then
+              echo --latest
+            else
+              echo --latest=false
+            fi
+          }
+          latest=$(gh release view --json tagName -q .tagName 2>/dev/null || true)
           gh release create "v$VERSION" "${binaries[@]}" dist/release.env dist/SHA256SUMS \
-            --title "Tailscale $VERSION (tailbox build)" --notes-file dist/notes.md --latest
+            --title "Tailscale $VERSION (tailbox build)" --notes-file dist/notes.md "$(latest_flag "$latest")"
