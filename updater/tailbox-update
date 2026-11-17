@@ -129,7 +129,7 @@ update() {
 hooks() {
     if [ "$1" = install ]; then
         self=$(cd "$(dirname "$0")" && pwd)/$(basename "$0") || return 1
-        case $self in *'&'*|*'\'*|*'
+        case $self in *'&'*|*\\*|*'
 '*) log 'unsafe updater path for hooks'; return 1;; esac
     fi
     mkdir -p "$(dirname "$TBU_CRONTAB")"; touch "$TBU_CRONTAB"
